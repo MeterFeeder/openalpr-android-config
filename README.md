@@ -4,18 +4,19 @@ A bash script, loosely based on [this Wiki entry](https://github.com/openalpr/op
 
 ## Environment
 
-The script was written to work under Mac OS X, but may work under Linux with some modifications.
+The script is updated to work under Ubuntu 16.10, but may work under Linux with some modifications.
 
 Tested under:
 
-- Mac OS X Yosemite (10.10.2) 
-- Android Studio 1.1.0 (Feb 18, 2015)
-- Android SDK: adt-bundle-mac-x86_64-20140702
-- Android NDK: android-ndk-r10d
-- OpenCV: OpenCV-2.4.10-android-sdk
-- Tess-two: [commit d0898ff9e7378](https://github.com/rmtheis/tess-two/tree/d0898ff9e73786770926857de58f8d6e93eb64ac)
-- OpenALPR: [commit 838997925](https://github.com/openalpr/openalpr/tree/838997925a8c4f0518b7bb2d64f9e1e7be994001)
-- android-cmake: [commit 98d85aeb999](https://github.com/taka-no-me/android-cmake/tree/98d85aeb99921aca6ec8a5313c00e7b6a4a989dd) of taka-no-me's fork (which fixes [this issue](https://code.google.com/p/android-cmake/issues/detail?id=14#c6))
+- Ubuntu 16.10
+- Android Studio 2.2.2
+- Android SDK: 25.2.3
+- Android NDK: version 13.1.3345770 and android-ndk-r12 (installed by this script)
+- OpenCV: OpenCV-2.4.9-android-sdk
+    - TODO: this script should allow testing build with different version of the OpenCV < 3.0
+- Tess-two: 6.1.0
+- OpenALPR: [commit 469c4fd6d782ac]
+- android-cmake: Script installs taka-no-me's fork (which fixes [this issue](https://code.google.com/p/android-cmake/issues/detail?id=14#c6))
 
 **Note**: As of the openalpr commit shown above, the script also runs a [patch](https://github.com/twelve17/openalpr-android-config/blob/master/etc/openalpr_android.patch) against the openalpr source to fix a compilation issue in `filesystem.cpp`.  The patch change is based [on this post](http://lxr.free-electrons.com/source/arch/arm/kernel/sys_oabi-compat.c).
 
