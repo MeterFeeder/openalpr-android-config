@@ -24,25 +24,26 @@ if [ -z $ANDROID_DEV_HOME ]; then
   export ANDROID_DEV_HOME=$HOME/Android 
 fi
 
-ANDROID_PLATFORM=21
-ANDROID_SDK_NAME="adt-bundle-mac-x86_64-20140702"
-ANDROID_NDK_NAME="android-ndk-r10d"
-ANDROID_OPENCV_SDK_NAME="OpenCV-2.4.10-android-sdk"
+ANDROID_PLATFORM=25
+ANDROID_SDK_NAME=Sdk
+ANDROID_OPENCV_SDK_NAME="OpenCV-2.4.9-android-sdk"
+ANDROID_CMAKE_NAME="cmake"
 
 OPENALPR_REPO="git@github.com:openalpr/openalpr.git"
 OPENALPR_MODULE_NAME="openalpr"
 OPENALPR_BUILD_DIR="$WORK_DIR/$OPENALPR_MODULE_NAME"
 
 # used for JNI support in openalpr
-JAVA_SDK_DIR=/System/Library/Frameworks/JavaVM.framework
-JAVA_SDK_LIB_DIR=$JAVA_SDK_DIR/Libraries
-JAVA_SDK_INCLUDE_DIR=$JAVA_SDK_DIR/Headers
+JAVA_SDK_DIR=/usr/lib/jvm/java-8-oracle
+JAVA_SDK_LIB_DIR="$JAVA_SDK_DIR/jre/lib/amd64"
+JAVA_SDK_INCLUDE_DIR=$JAVA_SDK_DIR/include
 
 TESS_TWO_REPO="git://github.com/rmtheis/tess-two"
 TESS_TWO_MODULE_NAME="tess-two"
 TESS_TWO_BUILD_DIR="$WORK_DIR/$TESS_TWO_MODULE_NAME"
 
-ANDROID_CMAKE_REPO="https://github.com/taka-no-me/android-cmake.git " # this is a fork
+ANDROID_CMAKE_REPO="git@github.com:taka-no-me/android-cmake.git " # this is a fork
+                #   git@github.com:taka-no-me/android-cmake.git
 ANDROID_CMAKE_MODULE_NAME=android-cmake
 
 #BUILD_ARCHS="i386 armv7 armv7s arm64 x86_64"
@@ -66,10 +67,6 @@ setenv_all() {
     echo "ANDROID_SDK directory does not exist: $ANDROID_SDK" && exit 1
   fi
 
-  # ANDROID_NDK
-  if [ -z "$ANDROID_NDK" ]; then 
-    export ANDROID_NDK=$ANDROID_DEV_HOME/$ANDROID_NDK_NAME
-  fi
   if [ ! -d "$ANDROID_NDK" ]; then 
     echo "ANDROID_NDK directory does not exist: $ANDROID_NDK" && exit 1
   fi
@@ -83,9 +80,9 @@ setenv_all() {
   fi
 
   if [ -z "$ANDROID_CMAKE" ]; then 
-    ANDROID_CMAKE=$ANDROID_DEV_HOME/$ANDROID_CMAKE_NAME
+    ANDROID_CMAKE=$WORK_DIR/$ANDROID_CMAKE_NAME
   fi
-  export ANDROID_CMAKE=$ANDROID_DEV_HOME/$ANDROID_CMAKE_MODULE_NAME
+  # export ANDROID_CMAKE=$ANDROID_DEV_HOME/$ANDROID_CMAKE_MODULE_NAME
   if [ ! -d "$ANDROID_CMAKE" ]; then 
     echo "ANDROID_CMAKE directory does not exist: $ANDROID_CMAKE" && exit 1
   fi
@@ -99,16 +96,24 @@ setenv_all() {
   if [ ! -f "$ANDROID_CMAKE_TOOLCHAIN" ]; then 
     echo "ANDROID_CMAKE_TOOLCHAIN file does not exist: $ANDROID_CMAKE_TOOLCHAIN" && exit 1
   fi
+
+  if [ ! -f "$JAVA_SDK_INCLUDE_DIR/jni_md.h" ]; then
+    echo "ERROR: Issue with JVM 8 on ubuntu, jni_md.h and jawt_md.h missing"
+    echo "See: http://stackoverflow.com/questions/24996017/jdk-1-8-on-linux-missing-jni-include-file"
+    echo "sudo ln -s $JAVA_SDK_INCLUDE_DIR/linux/jni_md.h $JAVA_SDK_INCLUDE_DIR/jni_md.h"
+    echo "sudo ln -s $JAVA_SDK_INCLUDE_DIR/linux/jawt_md.h $JAVA_SDK_INCLUDE_DIR/jawt_md.h"
+    exit 1;
+  fi
 }
 
 #-----------------------------------------------------------------------------
 function cleanup_global_output() {
   rm -rf $GLOBAL_OUTDIR
-  mkdir $GLOBAL_OUTDIR
-  mkdir $GLOBAL_OUTDIR/libs
-  mkdir $GLOBAL_OUTDIR/include
+  mkdir -p $GLOBAL_OUTDIR
+  mkdir -p $GLOBAL_OUTDIR/libs
+  mkdir -p $GLOBAL_OUTDIR/include
   for arch in $BUILD_ARCHS; do
-    mkdir $GLOBAL_OUTDIR/libs/$arch
+    mkdir -p $GLOBAL_OUTDIR/libs/$arch
   done
 }
 
@@ -117,7 +122,7 @@ function build_tesseract() {
   echo "Installing tesseract"
   cd $TESS_TWO_BUILD_DIR/tess-two
   $ANDROID_NDK/ndk-build
-  android update project --path .
+  android update project --path . --target android-$ANDROID_PLATFORM
   ant release
 
   for arch in $BUILD_ARCHS; do
@@ -129,9 +134,13 @@ function build_tesseract() {
 function build_openalpr() {
   echo "Installing openalpr"
 
-  # apply patch 
   cd $OPENALPR_BUILD_DIR
-  patch -N -p1 -i $ETC_DIR/openalpr_android.patch
+
+  # apply patch if needed
+  patch -N -p1 --dry-run --silent < $ETC_DIR/openalpr_android.patch 2>/dev/null
+  if [ $? -eq 0 ]; then
+    patch -N -p1 -i $ETC_DIR/openalpr_android.patch
+  fi
 
   # copy headers where openalpr can find them
   local tesseractIncludeDir=$GLOBAL_OUTDIR/include/tesseract
@@ -170,8 +179,8 @@ function build_openalpr() {
       -DLeptonica_LIB="$TESS_TWO_BUILD_DIR/tess-two/libs/$arch/liblept.so" \
       -DJAVA_AWT_INCLUDE_PATH=$JAVA_SDK_INCLUDE_DIR \
       -DJAVA_INCLUDE_PATH2=$JAVA_SDK_INCLUDE_DIR \
-      -DJAVA_AWT_LIBRARY="$JAVA_SDK_LIB_DIR/libawt.jnilib" \
-      -DJAVA_JVM_LIBRARY="$JAVA_SDK_LIB_DIR/libjvm.dylib" \
+      -DJAVA_AWT_LIBRARY="$JAVA_SDK_LIB_DIR/libawt.so" \
+      -DJAVA_JVM_LIBRARY="$JAVA_SDK_LIB_DIR/server/libjvm.so" \
       ../src/
 
     # remove -lpthread references
@@ -211,8 +220,58 @@ function install_to_target_project() {
   rsync -av $GLOBAL_OUTDIR/include/ $TARGET_PROJECT_DIR/app/src/main/jni/include/
 }
 
+#-----------------------------------------------------------------------------
+# A bug in Android Studio is installing the wrong version of the NDK causing CMAKE 
+# to throw errors: https://github.com/android-ndk/ndk/issues/199
+# 
+function install_ndk() {
+  NDK_VERSION="r12"
+  export ANDROID_NDK=$WORK_DIR/android-ndk-$NDK_VERSION
+  cd $WORK_DIR 
+  if [ ! -d "$ANDROID_NDK" ]; then 
+    echo "Installing ndk-bundle"
+    wget "https://dl.google.com/android/repository/android-ndk-$NDK_VERSION-linux-x86_64.zip" -o $WORK_DIR/android-ndk-$NDK_VERSION.zip
+    unzip android-ndk-$NDK_VERSION.zip
+  fi
+  
+}
 
 #-----------------------------------------------------------------------------
+
+function install_cmake() {
+  cd $WORK_DIR 
+
+#  for arch in $TOOLCHAIN_ARCHS; do
+#
+#    local installDir="$ANDROID_DEV_HOME/android-toolchain-${arch}"
+#
+#    if [ -d $installDir ]; then 
+#      echo "Found existing android-toolchain for $arch in $installDir"
+#    else
+#      $ANDROID_NDK/build/tools/make-standalone-toolchain.sh \
+#        --platform=android-$ANDROID_PLATFORM \
+#        --install-dir=$installDir \
+#        --arch=${arch}
+#      echo "make-standalone-toolchain result: $?"
+#    fi
+#  done
+
+  export ANDROID_CMAKE=$WORK_DIR/$ANDROID_CMAKE_NAME
+  if [ ! -d "$ANDROID_CMAKE" ]; then 
+    local installDir=`dirname $ANDROID_CMAKE`
+    echo "Installing CMAKE: $installDir"
+    cd $installDir
+    git clone $ANDROID_CMAKE_REPO $ANDROID_CMAKE_NAME
+  fi
+}
+
+#-----------------------------------------------------------------------------
+
+install_cmake
+[ $? != 0 ] && echo "cmake-android installation failed." && exit 1
+
+install_ndk
+[ $? != 0 ] && echo "android-ndk installation failed." && exit 1
 
 setenv_all
 cleanup_global_output
@@ -238,8 +297,7 @@ if [ ! -d "$OPENALPR_BUILD_DIR" ]; then
   git clone $OPENALPR_REPO $OPENALPR_BUILD_DIR
 fi
 
-#install_cmake
-#[ $? != 0 ] && echo "cmake-android installation failed." && exit 1
+
 
 build_tesseract 
 [ $? != 0 ] && echo "Tesseract installation failed." && exit 1
@@ -312,31 +370,4 @@ echo "Finished!"
 #}
 
 ##-----------------------------------------------------------------------------
-#function install_cmake() {
-#  cd $WORK_DIR 
-#
-##  for arch in $TOOLCHAIN_ARCHS; do
-##
-##    local installDir="$ANDROID_DEV_HOME/android-toolchain-${arch}"
-##
-##    if [ -d $installDir ]; then 
-##      echo "Found existing android-toolchain for $arch in $installDir"
-##    else
-##      $ANDROID_NDK/build/tools/make-standalone-toolchain.sh \
-##        --platform=android-$ANDROID_PLATFORM \
-##        --install-dir=$installDir \
-##        --arch=${arch}
-##      echo "make-standalone-toolchain result: $?"
-##    fi
-##  done
-#
-##  if [ -d $ANDROID_CMAKE ]; then 
-##    echo "Found existing android-cmake in $ANDROID_CMAKE"
-##  else
-##    local installDir=`dirname $ANDROID_CMAKE`
-##    cd $installDir
-##    git clone $ANDROID_CMAKE_REPO
-##  fi
-#}
-
 
