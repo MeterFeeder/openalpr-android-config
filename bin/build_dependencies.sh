@@ -34,7 +34,10 @@ OPENALPR_MODULE_NAME="openalpr"
 OPENALPR_BUILD_DIR="$WORK_DIR/$OPENALPR_MODULE_NAME"
 
 # used for JNI support in openalpr
-JAVA_SDK_DIR=/usr/lib/jvm/java-8-oracle
+if [ -z "$JAVA_HOME" ]; then
+    export JAVA_HOME=/usr/lib/jvm/java-8-oracle
+fi
+JAVA_SDK_DIR=$JAVA_HOME
 JAVA_SDK_LIB_DIR="$JAVA_SDK_DIR/jre/lib/amd64"
 JAVA_SDK_INCLUDE_DIR=$JAVA_SDK_DIR/include
 
@@ -55,6 +58,11 @@ TOOLCHAIN_ARCHS="arm x86 mips"
 #-----------------------------------------------------------------------------
 setenv_all() {
 
+  if [ -z "$ANDROID_NATIVE_API_LEVEL" ]; then
+    echo "Setting ANDROID_NATIVE_API_LEVEL to android-$ANDROID_PLATFORM"
+    export ANDROID_NATIVE_API_LEVEL="android-$ANDROID_PLATFORM"
+  fi
+
   if [ -z "$ANDROID_DEV_HOME" ]; then 
     echo "ANDROID_DEV_HOME not set" && exit 1
   fi
@@ -73,7 +81,7 @@ setenv_all() {
 
   # ANDROID_OPENCV_SDK (not exported)
   if [ -z "$ANDROID_OPENCV_SDK" ]; then 
-    ANDROID_OPENCV_SDK=$ANDROID_DEV_HOME/$ANDROID_OPENCV_SDK_NAME
+    ANDROID_OPENCV_SDK=$WORK_DIR/opencv/$ANDROID_OPENCV_SDK_NAME
   fi
   if [ ! -d "$ANDROID_OPENCV_SDK" ]; then 
     echo "ANDROID_OPENCV_SDK directory does not exist: $ANDROID_OPENCV_SDK" && exit 1
@@ -122,7 +130,7 @@ function build_tesseract() {
   echo "Installing tesseract"
   cd $TESS_TWO_BUILD_DIR/tess-two
   $ANDROID_NDK/ndk-build
-  android update project --path . --target android-$ANDROID_PLATFORM
+  $ANDROID_SDK/tools/android update project --path . --target android-$ANDROID_PLATFORM
   ant release
 
   for arch in $BUILD_ARCHS; do
@@ -137,10 +145,12 @@ function build_openalpr() {
   cd $OPENALPR_BUILD_DIR
 
   # apply patch if needed
+  set +e
   patch -N -p1 --dry-run --silent < $ETC_DIR/openalpr_android.patch 2>/dev/null
   if [ $? -eq 0 ]; then
     patch -N -p1 -i $ETC_DIR/openalpr_android.patch
   fi
+  set -e
 
   # copy headers where openalpr can find them
   local tesseractIncludeDir=$GLOBAL_OUTDIR/include/tesseract
@@ -211,13 +221,17 @@ function install_to_target_project() {
 
   # opencv libs
   rsync -av --include="libopencv_java.so" --include="*/" --exclude="*" \
-   $ANDROID_OPENCV_SDK/sdk/native/libs/ $TARGET_PROJECT_DIR/app/src/main/jniLibs/
+   $ANDROID_OPENCV_SDK/sdk/native/libs/ $TARGET_PROJECT_DIR/src/main/jniLibs/
+
+  # opencv libs
+  rsync -av --include="libopencv_java.so" --include="*/" --exclude="*" \
+   $ANDROID_OPENCV_SDK/sdk/native/jni/include/ $TARGET_PROJECT_DIR/src/main/cpp/include/
 
   # tess, alpr libs
-  rsync -av $GLOBAL_OUTDIR/libs/ $TARGET_PROJECT_DIR/app/src/main/jniLibs/
+  rsync -av $GLOBAL_OUTDIR/libs/ $TARGET_PROJECT_DIR/src/main/jniLibs/
 
   # tess, alpr include
-  rsync -av $GLOBAL_OUTDIR/include/ $TARGET_PROJECT_DIR/app/src/main/jni/include/
+  rsync -av $GLOBAL_OUTDIR/include/ $TARGET_PROJECT_DIR/src/main/cpp/include/
 }
 
 #-----------------------------------------------------------------------------
